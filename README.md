@@ -1,4 +1,4 @@
-to run:
+to run frontend:
 npx serve
 
 to run backend:
