@@ -25,67 +25,216 @@ window.onscroll = () =>{
   searchForm.classList.remove('active');
 }
 
-document.addEventListener("DOMContentLoaded", function () {
-  const commentForm = document.getElementById("commentForm");
-  const commentsContainer = document.getElementById("commentsContainer");
+document.addEventListener('DOMContentLoaded', function() {
+    // Initialize all like buttons and comment forms
+    document.querySelectorAll('.post').forEach(post => {
+        const postId = post.dataset.postId || post.id.replace('post-', '');
+        
+        // Initialize likes functionality
+        const likeButton = post.querySelector('.like-button');
+        const likeCount = post.querySelector('.like-count');
+        
+        if (likeButton && likeCount) {
+            initLikeSystem(postId, likeButton, likeCount);
+        }
+        
+        // Initialize comments functionality
+        const commentForm = post.querySelector('#commentForm');
+        const commentsContainer = post.querySelector('#commentsContainer');
+        
+        if (commentForm && commentsContainer) {
+            initCommentSystem(postId, commentForm, commentsContainer);
+        }
+    });
+    
 
-  // Load stored comments
-  let savedComments = JSON.parse(localStorage.getItem("comments")) || [];
-  savedComments.forEach((comment, index) => addCommentToDOM(comment, index));
-
-  commentForm.addEventListener("submit", function (event) {
-      event.preventDefault();
-
-      // Get user input
-      const username = document.getElementById("username").value;
-      const commentText = document.getElementById("commentText").value;
-
-      if (username && commentText) {
-          const commentData = { username, commentText, date: new Date().toLocaleString() };
-
-          // Save to local storage
-          savedComments.push(commentData);
-          localStorage.setItem("comments", JSON.stringify(savedComments));
-
-          // Add comment to DOM
-          addCommentToDOM(commentData, savedComments.length - 1);
-
-          // Clear input fields
-          commentForm.reset();
-      }
-  });
-
-  function addCommentToDOM(comment, index) {
-      const commentDiv = document.createElement("div");
-      commentDiv.classList.add("comment");
-
-      commentDiv.innerHTML = `
-          <div class="comment-header">
-              <strong>${comment.username}</strong> 
-              <span class="date">${comment.date}</span>
-              <button class="delete-btn" data-index="${index}" aria-label="Delete Comment">
-                  🗑️
-              </button>
-          </div>
-          <p>${comment.commentText}</p>
-      `;
-      commentsContainer.prepend(commentDiv); // Add new comments on top
-
-      // Add event listener for delete button
-      commentDiv.querySelector(".delete-btn").addEventListener("click", function () {
-          deleteComment(index);
-      });
-  }
-
-  function deleteComment(index) {
-      // Remove comment from array
-      savedComments.splice(index, 1);
-
-      // Update local storage
-      localStorage.setItem("comments", JSON.stringify(savedComments));
-
-      // Re-render comments
-      commentsContainer.innerHTML = "";
-      savedComments.forEach((comment, i) => addCommentToDOM(comment, i));
-  }
+    
+    // Search functionality
+    
+    const searchIcon = document.getElementById('search-icon');
+    const searchBox = document.getElementById('search-box');
+    const searchForm = document.querySelector('.search-form');
+    
+    searchIcon.addEventListener('click', () => {
+        searchForm.classList.toggle('active');
+        searchBox.focus();
+    });
+    
+    // Mobile menu toggle
+    const menuBars = document.getElementById('menu-bars');
+    const navbar = document.querySelector('.navbar');
+    
+    menuBars.addEventListener('click', () => {
+        navbar.classList.toggle('active');
+        menuBars.classList.toggle('fa-times');
+    });
+    
+    // Close search when scrolling
+    window.onscroll = () => {
+        searchForm.classList.remove('active');
+        navbar.classList.remove('active');
+        menuBars.classList.remove('fa-times');
+    };
 });
+
+// Like System
+const API_BASE = 'http://localhost:3000';
+async function initLikeSystem(postId, likeButton, likeCountElement) {
+    // Set post ID if not already set
+    if (!likeButton.closest('.post').dataset.postId) {
+        likeButton.closest('.post').dataset.postId = postId;
+    }
+    const API_BASE = 'http://localhost:3000';
+    // Get current like count
+    try {
+        const response = await fetch(`${API_BASE}/api/posts/${postId}/likes`);
+        const data = await response.json();
+        likeCountElement.textContent = data.likeCount;
+    } catch (error) {
+        console.error('Error fetching like count:', error);
+    }
+    
+    // Handle like button click
+    likeButton.addEventListener('click', async (e) => {
+        e.preventDefault();
+        
+        try {
+            const response = await fetch(`/api/posts/${postId}/likes`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                }
+            });
+            
+            const data = await response.json();
+            
+            if (response.ok) {
+                // Update like count display
+                likeCountElement.textContent = data.likeCount;
+                
+                // Visual feedback
+                const icon = likeButton.querySelector('i');
+                icon.classList.remove('far');
+                icon.classList.add('fas');
+                
+                // Disable button temporarily to prevent spamming
+                likeButton.style.pointerEvents = 'none';
+                setTimeout(() => {
+                    likeButton.style.pointerEvents = 'auto';
+                }, 1000);
+            } else {
+                console.error('Error:', data.error);
+                alert(data.error || 'Failed to like post');
+            }
+        } catch (error) {
+            console.error('Error:', error);
+            alert('Failed to like post. Please try again.');
+        }
+    });
+}
+
+// Comment System
+async function initCommentSystem(postId, commentForm, commentsContainer) {
+    // Set post ID if not already set
+    if (!commentForm.closest('.post').dataset.postId) {
+        commentForm.closest('.post').dataset.postId = postId;
+    }
+    
+    // Load existing comments
+    loadComments(postId, commentsContainer);
+    
+    // Handle comment submission
+    commentForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        
+        const usernameInput = commentForm.querySelector('#username');
+        const commentInput = commentForm.querySelector('#commentText');
+        const submitButton = commentForm.querySelector('button[type="submit"]');
+        
+        const username = usernameInput.value.trim();
+        const comment = commentInput.value.trim();
+        
+        if (!username || !comment) {
+            alert('Please enter both your name and a comment');
+            return;
+        }
+        
+        submitButton.disabled = true;
+        submitButton.textContent = 'Posting...';
+        const API_BASE = 'http://localhost:3000';
+        try {
+           const response = await fetch(`${API_BASE}/api/posts/${postId}/comments`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    username: username,
+                    content: comment
+                })
+            });
+            
+            if (response.ok) {
+                const newComment = await response.json();
+                addCommentToDOM(newComment, commentsContainer);
+                commentInput.value = '';
+            } else {
+                const error = await response.json();
+                alert(error.error || 'Failed to post comment');
+            }
+        } catch (error) {
+            console.error('Error:', error);
+            alert('Failed to post comment. Please try again.');
+        } finally {
+            submitButton.disabled = false;
+            submitButton.textContent = 'Post Comment';
+        }
+    });
+}
+
+async function loadComments(postId, container) {
+    try {
+        const response = await fetch(`${API_BASE}/api/posts/${postId}/comments`);
+        const comments = await response.json();
+        
+        // Clear existing comments
+        container.innerHTML = '';
+        
+        if (comments.length === 0) {
+            container.innerHTML = '<p>No comments yet. Be the first to comment!</p>';
+            return;
+        }
+        
+        comments.forEach(comment => {
+            addCommentToDOM(comment, container);
+        });
+    } catch (error) {
+        console.error('Error loading comments:', error);
+        container.innerHTML = '<p>Failed to load comments. Please refresh the page.</p>';
+    }
+}
+
+function addCommentToDOM(comment, container) {
+    const commentElement = document.createElement('div');
+    commentElement.className = 'comment';
+    commentElement.innerHTML = `
+        <div class="comment-header">
+            <strong>${escapeHtml(comment.username)}</strong>
+            <span>${new Date(comment.created_at).toLocaleString()}</span>
+        </div>
+        <div class="comment-content">${escapeHtml(comment.content)}</div>
+    `;
+    
+    // Prepend to show newest first
+    container.prepend(commentElement);
+}
+
+// Basic HTML escaping for security
+function escapeHtml(unsafe) {
+    return unsafe
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+}
